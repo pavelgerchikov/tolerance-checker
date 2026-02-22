@@ -2,4 +2,3 @@ streamlit
 easyocr
 opencv-python-headless
 pdf2image
-numpy
