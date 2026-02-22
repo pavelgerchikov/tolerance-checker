@@ -1,59 +1,39 @@
 import streamlit as st
-import easyocr
+import pytesseract
 import cv2
 import numpy as np
 from pdf2image import convert_from_bytes
 from PIL import Image
 
-st.set_page_config(page_title="בודק טולרנסים חכם", layout="wide")
-st.title("📏 בודק מידות וטולרנסים (ללא טבלת כותרת)")
+st.set_page_config(page_title="בודק טולרנסים", layout="wide")
+st.title("🔍 בודק טולרנסים מהיר")
 
+# הגדרה לקריאת PDF בשרת
 uploaded_file = st.file_uploader("העלה שרטוט PDF", type="pdf")
 
 if uploaded_file is not None:
-    with st.spinner('מנתח שרטוט ומסנן טבלאות...'):
+    with st.spinner('מנתח את השרטוט...'):
         # 1. המרה לתמונה
         images = convert_from_bytes(uploaded_file.read())
         img_np = np.array(images[0])
-        h, w, _ = img_np.shape
         img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
         
-        # 2. הגדרת אזור טבלת כותרת (למשל: 25% תחתון ימני)
-        # אפשר לשנות את האחוזים כאן לפי סוג השרטוטים שלך
-        forbidden_zone_x = w * 0.70  # מ-70% מהרוחב ומעלה
-        forbidden_zone_y = h * 0.70  # מ-70% מהגובה ומעלה
-
-        # 3. OCR
-        reader = easyocr.Reader(['en'])
-        results = reader.readtext(img_np)
+        # 2. זיהוי טקסט (שימוש במנוע קל יותר)
+        data = pytesseract.image_to_data(img_np, output_type=pytesseract.Output.DICT)
         
         missing_count = 0
-        for i, (bbox, text, prob) in enumerate(results):
-            # מיקום הטקסט
-            (tl, tr, br, bl) = bbox
-            curr_x, curr_y = int(tl[0]), int(tl[1])
+        for i in range(len(data)):
+            text = data[i].strip()
             
-            # סינון: אם הטקסט בתוך טבלת הכותרת - דלג
-            if curr_x > forbidden_zone_x and curr_y > forbidden_zone_y:
-                continue
-
-            # בדיקה אם מדובר במידה (מספר)
-            clean_text = text.replace(" ", "")
-            if any(char.isdigit() for char in clean_text):
-                
-                # בדיקת טולרנס (בטקסט עצמו או בסביבתו)
-                has_tol = '±' in clean_text or '+-' in clean_text
-                if not has_tol:
-                    for j in range(max(0, i-2), min(len(results), i+3)):
-                        if '±' in results[j][1] or '+-' in results[j][1]:
-                            has_tol = True
-                            break
-                
-                if not has_tol:
-                    # ציור עיגול אדום
-                    cv2.circle(img_cv, (curr_x + 10, curr_y + 10), 30, (0, 0, 255), 3)
+            # בדיקה אם זה מספר (מידה)
+            if text.isdigit() or (text.replace('.','',1).isdigit()):
+                # בדיקה אם יש סימן טולרנס בטקסט הסמוך
+                context = " ".join(data[max(0, i-2):i+3])
+                if '±' not in context and '+-' not in context:
+                    # סימון בעיגול אדום
+                    x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+                    cv2.circle(img_cv, (x + w//2, y + h//2), 30, (0, 0, 255), 3)
                     missing_count += 1
 
-        # הצגה
-        st.subheader(f"זיהינו {missing_count} מידות ללא טולרנס מחוץ לטבלת הכותרת")
+        st.subheader(f"נמצאו {missing_count} מידות ללא טולרנס:")
         st.image(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB), use_column_width=True)
