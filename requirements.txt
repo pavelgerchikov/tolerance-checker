@@ -1,5 +1,0 @@
-streamlit
-pytesseract
-opencv-python-headless
-pdf2image
-numpy
